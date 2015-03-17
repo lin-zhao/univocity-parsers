@@ -34,6 +34,7 @@ public class CsvParser extends AbstractParser<CsvParserSettings> {
 	private final boolean ignoreTrailingWhitespace;
 	private final boolean ignoreLeadingWhitespace;
 	private final boolean parseUnescapedQuotes;
+    private boolean ignoreQuoteEscape;
 
 	private final char delimiter;
 	private final char quote;
@@ -45,11 +46,12 @@ public class CsvParser extends AbstractParser<CsvParserSettings> {
 	 * The CsvParser supports all settings provided by {@link CsvParserSettings}, and requires this configuration to be properly initialized.
 	 * @param settings the parser configuration
 	 */
-	public CsvParser(CsvParserSettings settings) {
+	public CsvParser(CsvParserSettings settings, boolean ignoreQuoteEscape) {
 		super(settings);
 		ignoreTrailingWhitespace = settings.getIgnoreTrailingWhitespaces();
 		ignoreLeadingWhitespace = settings.getIgnoreLeadingWhitespaces();
 		parseUnescapedQuotes = settings.isParseUnescapedQuotes();
+        this.ignoreQuoteEscape = ignoreQuoteEscape;
 
 		CsvFormat format = settings.getFormat();
 		delimiter = format.getDelimiter();
@@ -60,6 +62,9 @@ public class CsvParser extends AbstractParser<CsvParserSettings> {
 		whitespaceAppender = new DefaultCharAppender(settings.getMaxCharsPerColumn(), "");
 	}
 
+    public CsvParser(CsvParserSettings settings) {
+        this(settings, false);
+    }
 	/**
 	 * {@inheritDoc}
 	 */
@@ -96,6 +101,9 @@ public class CsvParser extends AbstractParser<CsvParserSettings> {
 
 	private void parseQuotedValue(char prev) {
 		ch = input.nextChar();
+        // If a quote is the only character in a row, return an empty row. This is for fixing
+        if (ch == newLine && output.getCurrentColumn() == 0)
+            return;
 
 		while (!(prev == quote && (ch == delimiter || ch == newLine || ch <= ' '))) {
 			if (ch != quote) {
@@ -112,10 +120,14 @@ public class CsvParser extends AbstractParser<CsvParserSettings> {
 				}
 				output.appender.append(ch);
 				prev = ch;
-			} else if (prev == quoteEscape) {
+			} else if (prev == quoteEscape && !ignoreQuoteEscape) {
 				output.appender.append(quote);
 				prev = '\0';
-			} else {
+			} else if (prev == quoteEscape) {
+                // Seeing consecutive quotes. Include the last one.
+                output.appender.append(quote);
+                prev = ch;
+            } else {
 				prev = ch;
 			}
 			ch = input.nextChar();
